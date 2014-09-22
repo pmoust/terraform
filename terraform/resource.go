@@ -46,7 +46,8 @@ const (
 	FlagTainted
 	FlagOrphan
 	FlagHasTainted
-	FlagCreateBeforeDestroy
+	FlagReplacePrimary
+	FlagDeposed
 )
 
 // ResourceConfig holds the configuration given for a resource. This is
