@@ -516,6 +516,65 @@ func TestGraphAddDiff_destroy_counts(t *testing.T) {
 	}
 }
 
+func TestGraphAddDiff_createBeforeDestroy(t *testing.T) {
+	config := testConfig(t, "graph-diff-create-before")
+	diff := &Diff{
+		Resources: map[string]*InstanceDiff{
+			"aws_instance.bar": &InstanceDiff{
+				Destroy: true,
+				Attributes: map[string]*ResourceAttrDiff{
+					"ami": &ResourceAttrDiff{
+						Old:         "abc",
+						New:         "xyz",
+						RequiresNew: true,
+					},
+				},
+			},
+		},
+	}
+	state := &State{
+		Modules: []*ModuleState{
+			&ModuleState{
+				Path: rootModulePath,
+				Resources: map[string]*ResourceState{
+					"aws_instance.bar": &ResourceState{
+						Type: "aws_instance",
+						Primary: &InstanceState{
+							ID: "bar",
+							Attributes: map[string]string{
+								"ami": "abc",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	diffHash := checksumStruct(t, diff)
+
+	g, err := Graph(&GraphOpts{
+		Config: config,
+		Diff:   diff,
+		State:  state,
+	})
+	if err != nil {
+		t.Fatalf("err: %s", err)
+	}
+
+	actual := strings.TrimSpace(g.String())
+	expected := strings.TrimSpace(testTerraformGraphDiffCreateBeforeDestroyStr)
+	if actual != expected {
+		t.Fatalf("bad:\n\n%s\n\nexpected:\n\n%s", actual, expected)
+	}
+
+	// Verify that our original structure has not been modified
+	diffHash2 := checksumStruct(t, diff)
+	if diffHash != diffHash2 {
+		t.Fatal("diff has been modified")
+	}
+}
+
 func TestGraphInitState(t *testing.T) {
 	config := testConfig(t, "graph-basic")
 	state := &State{
@@ -765,6 +824,19 @@ aws_load_balancer.weblb (destroy)
 root
   root -> aws_instance.web
   root -> aws_load_balancer.weblb
+`
+
+const testTerraformGraphDiffCreateBeforeDestroyStr = `
+root: root
+aws_instance.bar
+  aws_instance.bar -> provider.aws
+aws_instance.bar (destroy)
+  aws_instance.bar (destroy) -> aws_instance.bar
+  aws_instance.bar (destroy) -> provider.aws
+provider.aws
+root
+  root -> aws_instance.bar
+  root -> aws_instance.bar (destroy)
 `
 
 const testTerraformGraphStateStr = `
