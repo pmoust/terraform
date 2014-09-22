@@ -338,7 +338,7 @@ func TestLoad_createBeforeDestroy(t *testing.T) {
 	}
 
 	// Should enable create before destroy
-	if !r.CreateBeforeDestroy {
+	if !r.Lifecycle.CreateBeforeDestroy {
 		t.Fatalf("Bad: %#v", r)
 	}
 
@@ -348,7 +348,7 @@ func TestLoad_createBeforeDestroy(t *testing.T) {
 	}
 
 	// Should not enable create before destroy
-	if r.CreateBeforeDestroy {
+	if r.Lifecycle.CreateBeforeDestroy {
 		t.Fatalf("Bad: %#v", r)
 	}
 }
