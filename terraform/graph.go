@@ -414,6 +414,9 @@ func graphAddDiff(g *depgraph.Graph, d *Diff) error {
 					Target: newN,
 				})
 
+				// Set the CreateBeforeDestroy flag on the old noun
+				rn.Resource.Flags |= FlagCreateBeforeDestroy
+
 			} else {
 				dep := &depgraph.Dependency{
 					Name:   newN.Name,
