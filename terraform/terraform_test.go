@@ -146,6 +146,13 @@ aws_instance.foo:
   type = aws_instance
 `
 
+const testTerraformApplyProvisionerFailCreateBeforeDestroyStr = `
+aws_instance.bar: (1 tainted)
+  ID = bar
+  require_new = abc
+  Tainted ID 1 = foo
+`
+
 const testTerraformApplyProvisionerResourceRefStr = `
 aws_instance.bar:
   ID = foo
