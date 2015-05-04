@@ -58,16 +58,20 @@ func resourceAwsElb() *schema.Resource {
 				},
 			},
 
-			// TODO: could be not ForceNew
 			"security_groups": &schema.Schema{
 				Type:     schema.TypeSet,
 				Elem:     &schema.Schema{Type: schema.TypeString},
 				Optional: true,
-				ForceNew: true,
 				Computed: true,
 				Set: func(v interface{}) int {
 					return hashcode.String(v.(string))
 				},
+			},
+
+			"source_security_group": &schema.Schema{
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
 			},
 
 			"subnets": &schema.Schema{
@@ -282,6 +286,9 @@ func resourceAwsElbRead(d *schema.ResourceData, meta interface{}) error {
 	d.Set("instances", flattenInstances(lb.Instances))
 	d.Set("listener", flattenListeners(lb.ListenerDescriptions))
 	d.Set("security_groups", lb.SecurityGroups)
+	if lb.SourceSecurityGroup != nil {
+		d.Set("source_security_group", lb.SourceSecurityGroup.GroupName)
+	}
 	d.Set("subnets", lb.Subnets)
 	d.Set("idle_timeout", lbAttrs.ConnectionSettings.IdleTimeout)
 	d.Set("connection_draining", lbAttrs.ConnectionDraining.Enabled)
@@ -434,6 +441,22 @@ func resourceAwsElbUpdate(d *schema.ResourceData, meta interface{}) error {
 			}
 			d.SetPartial("health_check")
 		}
+	}
+
+	if d.HasChange("security_groups") {
+		groups := d.Get("security_groups").(*schema.Set).List()
+
+		applySecurityGroupsOpts := elb.ApplySecurityGroupsToLoadBalancerInput{
+			LoadBalancerName: aws.String(d.Id()),
+			SecurityGroups:   expandStringList(groups),
+		}
+
+		_, err := elbconn.ApplySecurityGroupsToLoadBalancer(&applySecurityGroupsOpts)
+		if err != nil {
+			return fmt.Errorf("Failure applying security groups: %s", err)
+		}
+
+		d.SetPartial("security_groups")
 	}
 
 	if err := setTagsELB(elbconn, d); err != nil {
