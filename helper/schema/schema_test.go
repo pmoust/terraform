@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strconv"
 	"testing"
 
 	"github.com/hashicorp/terraform/config"
@@ -2224,6 +2225,129 @@ func TestSchemaMap_Diff(t *testing.T) {
 
 			Err: false,
 		},
+
+		// #58 Set with hyphen keys
+		{
+			Schema: map[string]*Schema{
+				"route": &Schema{
+					Type:     TypeSet,
+					Optional: true,
+					Elem: &Resource{
+						Schema: map[string]*Schema{
+							"index": &Schema{
+								Type:     TypeInt,
+								Required: true,
+							},
+
+							"gateway-name": &Schema{
+								Type:     TypeString,
+								Optional: true,
+							},
+						},
+					},
+					Set: func(v interface{}) int {
+						m := v.(map[string]interface{})
+						return m["index"].(int)
+					},
+				},
+			},
+
+			State: nil,
+
+			Config: map[string]interface{}{
+				"route": []map[string]interface{}{
+					map[string]interface{}{
+						"index":        "1",
+						"gateway-name": "hello",
+					},
+				},
+			},
+
+			Diff: &terraform.InstanceDiff{
+				Attributes: map[string]*terraform.ResourceAttrDiff{
+					"route.#": &terraform.ResourceAttrDiff{
+						Old: "0",
+						New: "1",
+					},
+					"route.1.index": &terraform.ResourceAttrDiff{
+						Old: "",
+						New: "1",
+					},
+					"route.1.gateway-name": &terraform.ResourceAttrDiff{
+						Old: "",
+						New: "hello",
+					},
+				},
+			},
+
+			Err: false,
+		},
+
+		// #59: StateFunc in nested set (#1759)
+		{
+			Schema: map[string]*Schema{
+				"service_account": &Schema{
+					Type:     TypeList,
+					Optional: true,
+					ForceNew: true,
+					Elem: &Resource{
+						Schema: map[string]*Schema{
+							"scopes": &Schema{
+								Type:     TypeSet,
+								Required: true,
+								ForceNew: true,
+								Elem: &Schema{
+									Type: TypeString,
+									StateFunc: func(v interface{}) string {
+										return v.(string) + "!"
+									},
+								},
+								Set: func(v interface{}) int {
+									i, err := strconv.Atoi(v.(string))
+									if err != nil {
+										t.Fatalf("err: %s", err)
+									}
+									return i
+								},
+							},
+						},
+					},
+				},
+			},
+
+			State: nil,
+
+			Config: map[string]interface{}{
+				"service_account": []map[string]interface{}{
+					{
+						"scopes": []interface{}{"123"},
+					},
+				},
+			},
+
+			Diff: &terraform.InstanceDiff{
+				Attributes: map[string]*terraform.ResourceAttrDiff{
+					"service_account.#": &terraform.ResourceAttrDiff{
+						Old:         "0",
+						New:         "1",
+						RequiresNew: true,
+					},
+					"service_account.0.scopes.#": &terraform.ResourceAttrDiff{
+						Old:         "0",
+						New:         "1",
+						RequiresNew: true,
+					},
+					"service_account.0.scopes.123": &terraform.ResourceAttrDiff{
+						Old:         "",
+						New:         "123!",
+						NewExtra:    "123",
+						RequiresNew: true,
+					},
+				},
+			},
+
+			Err: false,
+		},
 	}
 
 	for i, tc := range cases {
@@ -2250,7 +2374,7 @@ func TestSchemaMap_Diff(t *testing.T) {
 		}
 
 		if !reflect.DeepEqual(tc.Diff, d) {
-			t.Fatalf("#%d: bad:\n\n%#v", i, d)
+			t.Fatalf("#%d:\n\nexpected: %#v\n\ngot:\n\n%#v", i, tc.Diff, d)
 		}
 	}
 }
