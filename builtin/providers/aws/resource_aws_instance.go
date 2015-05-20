@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/awslabs/aws-sdk-go/aws"
+	"github.com/awslabs/aws-sdk-go/aws/awserr"
 	"github.com/awslabs/aws-sdk-go/service/ec2"
 	"github.com/hashicorp/terraform/helper/hashcode"
 	"github.com/hashicorp/terraform/helper/resource"
@@ -136,6 +137,11 @@ func resourceAwsInstance() *schema.Resource {
 			},
 
 			"ebs_optimized": &schema.Schema{
+				Type:     schema.TypeBool,
+				Optional: true,
+			},
+
+			"disable_api_termination": &schema.Schema{
 				Type:     schema.TypeBool,
 				Optional: true,
 			},
@@ -336,14 +342,15 @@ func resourceAwsInstanceCreate(d *schema.ResourceData, meta interface{}) error {
 
 	// Build the creation struct
 	runOpts := &ec2.RunInstancesInput{
-		ImageID:            aws.String(d.Get("ami").(string)),
-		Placement:          placement,
-		InstanceType:       aws.String(d.Get("instance_type").(string)),
-		MaxCount:           aws.Long(int64(1)),
-		MinCount:           aws.Long(int64(1)),
-		UserData:           aws.String(userData),
-		EBSOptimized:       aws.Boolean(d.Get("ebs_optimized").(bool)),
-		IAMInstanceProfile: iam,
+		ImageID:               aws.String(d.Get("ami").(string)),
+		Placement:             placement,
+		InstanceType:          aws.String(d.Get("instance_type").(string)),
+		MaxCount:              aws.Long(int64(1)),
+		MinCount:              aws.Long(int64(1)),
+		UserData:              aws.String(userData),
+		EBSOptimized:          aws.Boolean(d.Get("ebs_optimized").(bool)),
+		DisableAPITermination: aws.Boolean(d.Get("disable_api_termination").(bool)),
+		IAMInstanceProfile:    iam,
 	}
 
 	associatePublicIPAddress := false
@@ -509,6 +516,7 @@ func resourceAwsInstanceCreate(d *schema.ResourceData, meta interface{}) error {
 
 	// Create the instance
 	log.Printf("[DEBUG] Run configuration: %#v", runOpts)
+	var err error
 	runResp, err := conn.RunInstances(runOpts)
 	if err != nil {
 		return fmt.Errorf("Error launching source instance: %s", err)
@@ -575,7 +583,7 @@ func resourceAwsInstanceRead(d *schema.ResourceData, meta interface{}) error {
 	if err != nil {
 		// If the instance was not found, return nil so that we can show
 		// that the instance is gone.
-		if ec2err, ok := err.(aws.APIError); ok && ec2err.Code == "InvalidInstanceID.NotFound" {
+		if ec2err, ok := err.(awserr.Error); ok && ec2err.Code() == "InvalidInstanceID.NotFound" {
 			d.SetId("")
 			return nil
 		}
@@ -700,7 +708,18 @@ func resourceAwsInstanceUpdate(d *schema.ResourceData, meta interface{}) error {
 		if err != nil {
 			return err
 		}
+	}
 
+	if d.HasChange("disable_api_termination") {
+		_, err := conn.ModifyInstanceAttribute(&ec2.ModifyInstanceAttributeInput{
+			InstanceID: aws.String(d.Id()),
+			DisableAPITermination: &ec2.AttributeBooleanValue{
+				Value: aws.Boolean(d.Get("disable_api_termination").(bool)),
+			},
+		})
+		if err != nil {
+			return err
+		}
 	}
 
 	// TODO(mitchellh): wait for the attributes we modified to
@@ -759,7 +778,7 @@ func InstanceStateRefreshFunc(conn *ec2.EC2, instanceID string) resource.StateRe
 			InstanceIDs: []*string{aws.String(instanceID)},
 		})
 		if err != nil {
-			if ec2err, ok := err.(aws.APIError); ok && ec2err.Code == "InvalidInstanceID.NotFound" {
+			if ec2err, ok := err.(awserr.Error); ok && ec2err.Code() == "InvalidInstanceID.NotFound" {
 				// Set this to nil as if we didn't find anything.
 				resp = nil
 			} else {
