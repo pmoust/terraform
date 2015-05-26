@@ -517,7 +517,21 @@ func resourceAwsInstanceCreate(d *schema.ResourceData, meta interface{}) error {
 	// Create the instance
 	log.Printf("[DEBUG] Run configuration: %#v", runOpts)
 	var err error
-	runResp, err := conn.RunInstances(runOpts)
+
+	var runResp *ec2.Reservation
+	for i := 0; i < 5; i++ {
+		runResp, err = conn.RunInstances(runOpts)
+		if awsErr, ok := err.(awserr.Error); ok {
+			// IAM profiles can take ~10 seconds to propagate in AWS:
+			//  http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/iam-roles-for-amazon-ec2.html#launch-instance-with-role-console
+			if awsErr.Code() == "InvalidParameterValue" && strings.Contains(awsErr.Message(), "Invalid IAM Instance Profile") {
+				log.Printf("[DEBUG] Invalid IAM Instance Profile referenced, retrying...")
+				time.Sleep(2 * time.Second)
+				continue
+			}
+		}
+		break
+	}
 	if err != nil {
 		return fmt.Errorf("Error launching source instance: %s", err)
 	}
@@ -679,6 +693,11 @@ func resourceAwsInstanceUpdate(d *schema.ResourceData, meta interface{}) error {
 	conn := meta.(*AWSClient).ec2conn
 
 	d.Partial(true)
+	if err := setTags(conn, d); err != nil {
+		return err
+	} else {
+		d.SetPartial("tags")
+	}
 
 	// SourceDestCheck can only be set on VPC instances
 	if d.Get("subnet_id").(string) != "" {
@@ -725,11 +744,6 @@ func resourceAwsInstanceUpdate(d *schema.ResourceData, meta interface{}) error {
 	// TODO(mitchellh): wait for the attributes we modified to
 	// persist the change...
 
-	if err := setTags(conn, d); err != nil {
-		return err
-	} else {
-		d.SetPartial("tags")
-	}
 	d.Partial(false)
 
 	return resourceAwsInstanceRead(d, meta)
