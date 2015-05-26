@@ -96,6 +96,40 @@ func resourceAwsElb() *schema.Resource {
 				Default:  300,
 			},
 
+			"mutable_listener": &schema.Schema{
+				Type:     schema.TypeSet,
+				Optional: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"instance_port": &schema.Schema{
+							Type:     schema.TypeInt,
+							Required: true,
+						},
+
+						"instance_protocol": &schema.Schema{
+							Type:     schema.TypeString,
+							Required: true,
+						},
+
+						"lb_port": &schema.Schema{
+							Type:     schema.TypeInt,
+							Required: true,
+						},
+
+						"lb_protocol": &schema.Schema{
+							Type:     schema.TypeString,
+							Required: true,
+						},
+
+						"ssl_certificate_id": &schema.Schema{
+							Type:     schema.TypeString,
+							Optional: true,
+						},
+					},
+				},
+				Set: resourceAwsElbMutableListenerHash,
+			},
+
 			"listener": &schema.Schema{
 				Type:     schema.TypeSet,
 				Required: true,
@@ -187,6 +221,17 @@ func resourceAwsElbCreate(d *schema.ResourceData, meta interface{}) error {
 	listeners, err := expandListeners(d.Get("listener").(*schema.Set).List())
 	if err != nil {
 		return err
+	}
+
+	// Expand the "listener" set to aws-sdk-go compat []*elb.Listener
+	mutableListeners, err := expandListeners(d.Get("mutable_listener").(*schema.Set).List())
+	if err != nil {
+		return err
+	}
+
+	// Append mutable listeners to the listener slice
+	for _, mutableListener := range mutableListeners {
+		listeners = append(listeners, mutableListener)
 	}
 
 	tags := tagsFromMapELB(d.Get("tags").(map[string]interface{}))
@@ -323,6 +368,21 @@ func resourceAwsElbUpdate(d *schema.ResourceData, meta interface{}) error {
 
 		remove, _ := expandListeners(os.Difference(ns).List())
 		add, _ := expandListeners(ns.Difference(os).List())
+
+		/* mutable listeners
+		om, nm := d.GetChange("mutable_listener")
+		oms := om.(*schema.Set)
+		nms := nm.(*schema.Set)
+
+		removeM, _ := expandListeners(oms.Difference(nms).List())
+		for _, r := range removeM {
+			remove = append(remove, r)
+		}
+		addM, _ := expandListeners(nms.Difference(oms).List())
+		for _, a := range addM {
+			add = append(add, a)
+		}
+		*/
 
 		if len(remove) > 0 {
 			ports := make([]*int64, 0, len(remove))
@@ -541,6 +601,20 @@ func resourceAwsElbListenerHash(v interface{}) int {
 	var buf bytes.Buffer
 	m := v.(map[string]interface{})
 	buf.WriteString(fmt.Sprintf("%d-", m["instance_port"].(int)))
+	buf.WriteString(fmt.Sprintf("%s-", m["instance_protocol"].(string)))
+	buf.WriteString(fmt.Sprintf("%d-", m["lb_port"].(int)))
+	buf.WriteString(fmt.Sprintf("%s-", m["lb_protocol"].(string)))
+
+	if v, ok := m["ssl_certificate_id"]; ok {
+		buf.WriteString(fmt.Sprintf("%s-", v.(string)))
+	}
+
+	return hashcode.String(buf.String())
+}
+
+func resourceAwsElbMutableListenerHash(v interface{}) int {
+	var buf bytes.Buffer
+	m := v.(map[string]interface{})
 	buf.WriteString(fmt.Sprintf("%s-", m["instance_protocol"].(string)))
 	buf.WriteString(fmt.Sprintf("%d-", m["lb_port"].(int)))
 	buf.WriteString(fmt.Sprintf("%s-", m["lb_protocol"].(string)))
