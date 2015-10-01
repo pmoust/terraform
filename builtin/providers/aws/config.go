@@ -18,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ecs"
 	"github.com/aws/aws-sdk-go/service/efs"
 	"github.com/aws/aws-sdk-go/service/elasticache"
+	elasticsearch "github.com/aws/aws-sdk-go/service/elasticsearchservice"
 	"github.com/aws/aws-sdk-go/service/elb"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/kinesis"
@@ -50,6 +51,7 @@ type AWSClient struct {
 	ec2conn            *ec2.EC2
 	ecsconn            *ecs.ECS
 	efsconn            *efs.EFS
+	esconn             *elasticsearch.ElasticsearchService
 	elbconn            *elb.ELB
 	autoscalingconn    *autoscaling.AutoScaling
 	s3conn             *s3.S3
@@ -62,7 +64,7 @@ type AWSClient struct {
 	kinesisconn        *kinesis.Kinesis
 	elasticacheconn    *elasticache.ElastiCache
 	lambdaconn         *lambda.Lambda
-	opsworksconn    *opsworks.OpsWorks
+	opsworksconn       *opsworks.OpsWorks
 }
 
 // Client configures and returns a fully initialized AWSClient
@@ -157,6 +159,12 @@ func (c *Config) Client() (interface{}, error) {
 		log.Println("[INFO] Initializing EFS Connection")
 		client.efsconn = efs.New(awsConfig)
 
+		log.Println("[INFO] Initializing ElasticSearch Connection")
+		client.esconn = elasticsearch.New(awsConfig)
+
+		// aws-sdk-go uses v4 for signing requests, which requires all global
+		// endpoints to use 'us-east-1'.
+		// See http://docs.aws.amazon.com/general/latest/gr/sigv4_changes.html
 		log.Println("[INFO] Initializing Route 53 connection")
 		client.r53conn = route53.New(usEast1AwsConfig)
 
